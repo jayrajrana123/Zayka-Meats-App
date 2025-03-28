@@ -3,7 +3,7 @@ name: Build and Upload APK & IPA
 on:
   push:
     branches:
-      - main  # Runs on every push to main branch
+      - main  # Runs on every push to the main branch
 
 jobs:
   build:
@@ -32,8 +32,11 @@ jobs:
           cd android
           ./gradlew assembleRelease
 
+      - name: Debug APK Path
+        run: ls -al android/app/build/outputs/apk/release/
+
       - name: Upload APK
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # Using v4 consistently
         with:
           name: apk
           path: android/app/build/outputs/apk/release/app-release.apk
@@ -49,8 +52,11 @@ jobs:
           cd ios
           fastlane gym --export_method ad-hoc
 
+      - name: Debug iOS Build Path
+        run: ls -al ios/build/
+
       - name: Upload IPA
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # Using v4 consistently
         with:
           name: ipa
-          path: ios/build/*.ipa
+          path: ios/build/App.ipa  # Ensure this matches the actual output
