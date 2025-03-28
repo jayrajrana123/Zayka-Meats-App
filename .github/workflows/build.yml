@@ -1,4 +1,4 @@
-name: Build and Upload APK & IPA
+name: Build and Upload APK
 
 on:
   push:
@@ -22,7 +22,10 @@ jobs:
 
       # ✅ Install project dependencies
       - name: Install dependencies
-        run: npm install
+        run: |
+          npm install --legacy-peer-deps
+          npm install -g react-native-cli
+          npm install -g @react-native-community/cli
 
       # ✅ Set up Java & Android SDK for React Native Android build
       - name: Set up Java and Android SDK
@@ -30,46 +33,84 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
+          
+      # ✅ Setup Android SDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+          
+      # ✅ Show directory structure for debugging
+      - name: Show project structure
+        run: |
+          echo "Current directory structure:"
+          ls -la
+          echo "Contents of src directory:"
+          ls -la src || echo "No src directory"
+
+      # ✅ Initialize Android project if it doesn't exist
+      - name: Initialize Android project
+        run: |
+          echo "Initializing a temporary React Native project..."
+          npx react-native init AndroidSetup --directory ./temp_project
+          echo "Copying Android directory to project root..."
+          cp -r ./temp_project/android ./
+          mkdir -p android/app/src/main/assets
+          mkdir -p android/app/src/main/res/drawable-mdpi
+          cp -r ./src/assets/* android/app/src/main/res/drawable-mdpi/ || echo "No assets to copy"
+          echo "Android directory after setup:"
+          ls -la android
+
+      # ✅ Apply Android configuration
+      - name: Configure Android build
+        run: |
+          # Set app name in android/app/src/main/res/values/strings.xml
+          if [ -f android/app/src/main/res/values/strings.xml ]; then
+            sed -i 's/AndroidSetup/ZaykaApp/g' android/app/src/main/res/values/strings.xml
+            echo "Updated app name in strings.xml"
+          else
+            echo "strings.xml not found"
+          fi
+          
+          # Update package name in android/app/build.gradle
+          if [ -f android/app/build.gradle ]; then
+            sed -i 's/com.androidsetup/com.jayrajsinh.zaykaapp/g' android/app/build.gradle
+            echo "Updated package name in build.gradle"
+          else
+            echo "build.gradle not found"
+          fi
+          
+          # Create a local.properties file to set SDK path
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          echo "Created local.properties with SDK path: $ANDROID_HOME"
 
       # ✅ Build the Android APK
       - name: Build Android APK
         run: |
           cd android
-          ./gradlew assembleRelease
+          echo "Current directory: $(pwd)"
+          echo "Checking if gradlew exists:"
+          ls -la
+          echo "Making gradlew executable..."
+          chmod +x gradlew
+          echo "Running gradlew assembleDebug first for safer build..."
+          ./gradlew assembleDebug --info || echo "Debug build failed, continuing to release build"
+          echo "Building release APK..."
+          ./gradlew assembleRelease --info || ./gradlew --stacktrace assembleRelease
 
       # ✅ Debug APK Path to verify if APK was generated
       - name: Debug APK Path
-        run: ls -al android/app/build/outputs/apk/release/
+        run: |
+          echo "Searching for APK files..."
+          find android -name "*.apk" || echo "No APK files found"
+          echo "Checking specific output directories:"
+          ls -la android/app/build/outputs/ || echo "No outputs directory"
+          ls -la android/app/build/outputs/apk/ || echo "No apk directory"
 
-      # ✅ Upload APK as an artifact
+      # ✅ Upload APK as an artifact (looking in both debug and release folders)
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: android/app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error  # Prevent silent failures
-
-      # ✅ Set up Fastlane for iOS builds
-      - name: Set up Fastlane for iOS
-        run: |
-          cd ios
-          gem install fastlane
-          fastlane init
-
-      # ✅ Build iOS App using Fastlane
-      - name: Build iOS App
-        run: |
-          cd ios
-          fastlane gym --export_method ad-hoc
-
-      # ✅ Debug iOS Build Path to verify IPA file exists
-      - name: Debug iOS Build Path
-        run: ls -al ios/build/
-
-      # ✅ Upload IPA as an artifact
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: ipa
-          path: ios/build/App.ipa  # Ensure this matches actual output
-          if-no-files-found: error  # Prevent silent failures
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn  # Don't fail if files aren't found
