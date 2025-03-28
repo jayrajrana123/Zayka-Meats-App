@@ -24,9 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm install --legacy-peer-deps
-          npm install -g react-native-cli
-          npm install -g @react-native-community/cli
-
+          
       # ✅ Set up Java & Android SDK for React Native Android build
       - name: Set up Java and Android SDK
         uses: actions/setup-java@v4
@@ -46,16 +44,28 @@ jobs:
           echo "Contents of src directory:"
           ls -la src || echo "No src directory"
 
-      # ✅ Initialize Android project if it doesn't exist
-      - name: Initialize Android project
+      # ✅ Use a pre-built Android template instead of initializing a new project
+      - name: Get Android template
         run: |
-          echo "Initializing a temporary React Native project..."
-          npx react-native init AndroidSetup --directory ./temp_project
-          echo "Copying Android directory to project root..."
-          cp -r ./temp_project/android ./
+          echo "Downloading a pre-built Android template..."
+          git clone --depth=1 https://github.com/react-native-community/react-native-template-typescript.git template
           mkdir -p android/app/src/main/assets
           mkdir -p android/app/src/main/res/drawable-mdpi
+          
+          # Instead of initializing a new project, we'll use a pre-made template
+          wget -q https://github.com/react-native-community/react-native-template-typescript/archive/refs/heads/main.zip
+          unzip -q main.zip
+          
+          # Copy the Android directory from the template
+          cp -r react-native-template-typescript-main/template/android ./
+          
+          # Create necessary directories
+          mkdir -p android/app/src/main/assets
+          mkdir -p android/app/src/main/res/drawable-mdpi
+          
+          # Copy assets if available
           cp -r ./src/assets/* android/app/src/main/res/drawable-mdpi/ || echo "No assets to copy"
+          
           echo "Android directory after setup:"
           ls -la android
 
@@ -64,7 +74,7 @@ jobs:
         run: |
           # Set app name in android/app/src/main/res/values/strings.xml
           if [ -f android/app/src/main/res/values/strings.xml ]; then
-            sed -i 's/AndroidSetup/ZaykaApp/g' android/app/src/main/res/values/strings.xml
+            sed -i 's/HelloWorld/ZaykaApp/g' android/app/src/main/res/values/strings.xml
             echo "Updated app name in strings.xml"
           else
             echo "strings.xml not found"
@@ -72,7 +82,7 @@ jobs:
           
           # Update package name in android/app/build.gradle
           if [ -f android/app/build.gradle ]; then
-            sed -i 's/com.androidsetup/com.jayrajsinh.zaykaapp/g' android/app/build.gradle
+            sed -i 's/com.helloworld/com.jayrajsinh.zaykaapp/g' android/app/build.gradle
             echo "Updated package name in build.gradle"
           else
             echo "build.gradle not found"
@@ -81,6 +91,12 @@ jobs:
           # Create a local.properties file to set SDK path
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
           echo "Created local.properties with SDK path: $ANDROID_HOME"
+          
+          # Copy the React Native JavaScript bundle
+          echo "Creating index.android.bundle..."
+          mkdir -p android/app/src/main/assets/
+          npm install -g react-native-cli@2.0.1
+          npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/ || echo "Bundle creation failed but continuing"
 
       # ✅ Build the Android APK
       - name: Build Android APK
@@ -91,7 +107,7 @@ jobs:
           ls -la
           echo "Making gradlew executable..."
           chmod +x gradlew
-          echo "Running gradlew assembleDebug first for safer build..."
+          echo "Running gradlew assembleDebug..."
           ./gradlew assembleDebug --info || echo "Debug build failed, continuing to release build"
           echo "Building release APK..."
           ./gradlew assembleRelease --info || ./gradlew --stacktrace assembleRelease
